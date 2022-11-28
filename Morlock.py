@@ -1,4 +1,4 @@
-import cmd, os, sys, json, bcrypt
+import cmd, os, sys, json, bcrypt, shlex
 
 DEFAULT = {
     "name": "[unnamed]",
@@ -121,6 +121,9 @@ class Morlock(cmd.Cmd):
         content = json.dumps(self.content or {}, ensure_ascii=False, indent=4)
         print(content)
 
+    def do_set(self, *args):
+        print(args)
+
     def do_unload(self, *args):
         pass 
 
@@ -136,14 +139,6 @@ class Morlock(cmd.Cmd):
     def do_EOF(self, *args):
         print(sep='')
         return True
-
-    def set_file(self, file=None):
-        if file is not None:
-            self.file = file
-
-    def set_password(self, password=None):
-        if password is not None:
-            self.password = password
 
     @staticmethod
     def is_json(txt: str) -> bool:
