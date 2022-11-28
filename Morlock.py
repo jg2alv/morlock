@@ -1,4 +1,4 @@
-import cmd, os, sys, json, bcrypt, shlex
+import cmd, os, json, bcrypt, shlex
 
 DEFAULT = {
     "name": "[unnamed]",
@@ -17,13 +17,13 @@ DEFAULT_STR = str(DEFAULT)
 """
 
 class MorlockFile:
-    file: str = None
+    path: str = None
     content: dict = None
     password: str = None
     modified: bool = False
 
-    def __init__(self, file: str, content: dict, password: str) -> None:
-        self.file = file
+    def __init__(self, path: str, content: dict, password: str) -> None:
+        self.path = path
         self.content = content
         self.password = password
 
@@ -37,38 +37,38 @@ class MorlockCli(cmd.Cmd):
     content: dict = None
     password: str = None
 
-    def do_load(self, files):
+    def do_load(self, paths):
         'Load given file(s)'
 
-        for file in shlex.split(files):
-            print("Loading '{}'...".format(file))
+        for path in shlex.split(paths):
+            print("Loading '{}'...".format(path))
 
             # If to-be-active file is already loaded
-            if self.findmorlockfile(file) is not None:
-                msg = "'{}' is already loaded. Maybe try `switch`?".format(file)
+            if self.findmorlockfile(path) is not None:
+                msg = "'{}' is already loaded. Maybe try `switch`?".format(path)
                 print(msg)
                 continue
 
             # If to-be-active file is already active
             if self.activefile is not None:
-                msg = "'{}' is already the acitve file.".format(file)
+                msg = "'{}' is already the acitve file.".format(path)
                 print(msg)
                 continue
 
             # If the given file does not exist
-            if not os.path.isfile(file):
-                msg = "'{}' not found.".format(file)
+            if not os.path.isfile(path):
+                msg = "'{}' not found.".format(path)
                 print(msg)
                 continue
 
             # If the file's extension isn't .mp3
-            ext = os.path.splitext(file)[1].replace('.', '').lower()
+            ext = os.path.splitext(path)[1].replace('.', '').lower()
             if not ext in ['mp3']:
                 msg = "Extension '{}' is not supported.".format(ext)
                 print(msg)
                 continue
 
-            with open(file, 'rb') as f:
+            with open(path, 'rb') as f:
                 byte = f.read()
                 content = []
 
@@ -100,13 +100,13 @@ class MorlockCli(cmd.Cmd):
             # If `morlock` content isn't JSON
             content = json.loads(content or DEFAULT_STR)
             if not MorlockCli.isvalid(content):
-                msg = "'{}' is possibly corrupted.".format(file)
+                msg = "'{}' is possibly corrupted.".format(path)
                 print(msg)
                 continue
 
             # If file is encrypted
             if content['password'] is not None:
-                msg = "Type in password for '{}': ".format(file)
+                msg = "Type in password for '{}': ".format(path)
                 password = input(msg)
                 match = bcrypt.checkpw(password.encode('utf-8'), content['password'].encode('utf-8'))
                 if not match:
@@ -116,21 +116,21 @@ class MorlockCli(cmd.Cmd):
             else:
                 password = None
 
-            msg = "'{}' loaded successfully. Activate it with `activate {}`".format(file, file)
-            morlockfile = MorlockFile(file, content, password)
+            msg = "'{}' loaded successfully. Activate it with `activate {}`".format(path, path)
+            morlockfile = MorlockFile(path, content, password)
             self.loadedfiles.append(morlockfile)
             print(msg)
 
-    def do_unload(self, files):
-        for file in shlex.split(files):
-            morlockfile = self.findmorlockfile(file)
+    def do_unload(self, paths):
+        for path in shlex.split(paths):
+            morlockfile = self.findmorlockfile(path)
             if morlockfile is None:
-                msg = "'{}' is not currently loaded. First, load it with `load {}`".format(file, file)
+                msg = "'{}' is not currently loaded. First, load it with `load {}`".format(path, path)
                 print(msg)
                 continue
 
             if morlockfile.modified:
-                msg = "'{}' was modified. Do you wish to close it and discard changes (y/n)? ".format(file)
+                msg = "'{}' was modified. Do you wish to close it and discard changes (y/n)? ".format(path)
                 discard = input(msg)
 
                 while discard.lower() not in ['y', 'n']:
@@ -142,19 +142,19 @@ class MorlockCli(cmd.Cmd):
             if self.activefile == morlockfile:
                 self.do_deactivate()
 
-            msg = "'{}' successfully closed.".format(file)
+            msg = "'{}' successfully closed.".format(path)
             self.loadedfiles.remove(morlockfile)
             print(msg)
 
-    def do_list(self, files):
+    def do_list(self, paths):
         "Print data that's saved on file(s) - given or active"
 
         # If files were given
-        if files != '':
-            for file in shlex.split(files):
-                morlockfile = self.findmorlockfile(file)
+        if paths != '':
+            for path in shlex.split(paths):
+                morlockfile = self.findmorlockfile(path)
                 if morlockfile is None:
-                    msg = "'{}' is not currently loaded. First, load it with `load {}`".format(file, file)
+                    msg = "'{}' is not currently loaded. First, load it with `load {}`".format(path, path)
                     print(msg)
                     continue
                 
@@ -174,21 +174,21 @@ class MorlockCli(cmd.Cmd):
     def do_set(self, arg):
         print(arg)
 
-    def do_activate(self, file):
-        morlockfile = self.findmorlockfile(file)
+    def do_activate(self, path):
+        morlockfile = self.findmorlockfile(path)
         if morlockfile is None:
-            msg = "'{}' is not currently loaded. First, load it with `load {}`".format(file, file)
+            msg = "'{}' is not currently loaded. First, load it with `load {}`".format(path, path)
             print(msg)
             return
 
         if self.activefile is None:
             self.activefile = morlockfile
-            self.prompt = 'morlock({})> '.format(file)
-            msg = "'{}' activated successfully.".format(file)
+            self.prompt = 'morlock({})> '.format(path)
+            msg = "'{}' activated successfully.".format(path)
             print(msg)
         else:
-            file = self.activefile.file
-            msg = "'{}' is currently active. First, deactivate it with `deactivate {}`".format(file, file)
+            path = self.activefile.path
+            msg = "'{}' is currently active. First, deactivate it with `deactivate {}`".format(path, path)
             pass
 
     def do_deactivate(self, _: str=None):
@@ -200,20 +200,20 @@ class MorlockCli(cmd.Cmd):
         self.activefile = None
         self.prompt = 'morlock> '
 
-    def do_switch(self, file: str) -> None:
+    def do_switch(self, path: str) -> None:
         '`switch [FILE]` is a shortcut for `deactivate; activate [FILE]`'
 
-        morlockfile = self.findmorlockfile(file)
+        morlockfile = self.findmorlockfile(path)
 
         # If to-be-active file is not loaded
         if morlockfile is None:
-            msg = "'{}' is not loaded. Run `load {}` first".format(file, file)
+            msg = "'{}' is not loaded. Run `load {}` first".format(path, path)
             print(msg)
         else:
             if self.activefile is not None:
                 self.do_deactivate()
             
-            self.do_activate(file)
+            self.do_activate(path)
 
     def do_save(self, arg):
         pass
@@ -222,9 +222,9 @@ class MorlockCli(cmd.Cmd):
         print(sep='')
         return True
 
-    def findmorlockfile(self, file: str) -> MorlockFile:
+    def findmorlockfile(self, path: str) -> MorlockFile:
         for loadedfile in self.loadedfiles:
-            if loadedfile.file == file:
+            if loadedfile.path == path:
                 return loadedfile
 
         return None
