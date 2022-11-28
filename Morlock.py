@@ -168,6 +168,30 @@ class MorlockCli(cmd.Cmd):
             msg = "'{}' is currently active. First, deactivate it with `deactivate {}`".format(file, file)
             pass
 
+    def do_deactivate(self, _=None):
+        if self.activefile is None:
+            msg = "There's no currently active file."
+            print(msg)
+            return
+
+        self.activefile = None
+        self.prompt = 'morlock> '
+
+    def do_switch(self, file: str) -> None:
+        '`switch [FILE]` is a shortcut for `deactivate; activate [FILE]`'
+
+        morlockfile = self.findmorlockfile(file)
+
+        # If to-be-active file is not loaded
+        if morlockfile is None:
+            msg = "'{}' is not loaded. Run `load {}` first".format(file, file)
+            print(msg)
+        else:
+            if self.activefile is not None:
+                self.do_deactivate()
+            
+            self.do_activate(file)
+
     def do_save(self, arg):
         pass
 
