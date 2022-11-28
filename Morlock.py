@@ -36,117 +36,137 @@ class MorlockCli(cmd.Cmd):
     content: dict = None
     password: str = None
 
-    def do_load(self, file):
-        'Load a given file'
+    def do_load(self, files):
+        'Load given file(s)'
 
-        # If there's a already file loaded
-        if self.activefile is not None:
-            action = None
-            msg = "'{}' is currently loaded. Would you like to s(w)itch acitve files, (s)ave and close the current file or (d)iscard changes [sd]? ".format(self.activefile)
-            
-            while action not in ['s', 'd', 'w']:
-                action = input(msg)
-            
-            if action == 's':
-                self.do_save(file)
-                self.do_close(file)
-                self.do_load(file)
-            elif action == 'd':
-                self.do_close(discard=True)
-            elif action == 'w':
-                self.do_switch(file)
+        for file in shlex.split(files):
+            print("Loading '{}'...".format(file))
+
+            # If to-be-active file is already loaded
+            if self.findmorlockfile(file) is not None:
+                msg = "'{}' is already loaded. Maybe try `switch`?".format(file)
+                print(msg)
+                continue
+
+            # If to-be-active file is already active
+            if self.activefile is not None:
+                msg = "'{}' is already the acitve file.".format(file)
+                print(msg)
+                continue
+
+            # If the given file does not exist
+            if not os.path.isfile(file):
+                msg = "'{}' not found.".format(file)
+                print(msg)
+                continue
+
+            # If the file's extension isn't .mp3
+            ext = os.path.splitext(file)[1].replace('.', '').lower()
+            if not ext in ['mp3']:
+                msg = "Extension '{}' is not supported.".format(ext)
+                print(msg)
+                continue
+
+            with open(file, 'rb') as f:
+                byte = f.read()
+                content = []
+
+                # Reading until the start of MP3 content
+                while not byte.startswith(b'ID3'):
+                    content.append(byte[0])
+                    byte = byte[1:] 
+
+                # Turning array of ints into string with `morlock` content
+                content = "".join(map(chr, content))
+
+            # Getting `morlock` content inside of the file's head
+            if not '<morlock>' in content or not '</morlock>' in content:
+                content = ''
             else:
-                msg = 'Something went terribly wrong - exiting...'
+                while not content.startswith('<morlock>'):
+                    content = content[1:]
+
+                while not content.endswith('</morlock>'):
+                    content = content[:-1]
+
+                # Removing `morlock` tags
+                content = content.replace('<morlock>', '').replace('</morlock>', '')
+
+                # Extracting JSON content
+                while not MorlockCli.isjson(content) and content != '':
+                    content = content[1:]
+
+            # If `morlock` content isn't JSON
+            content = json.loads(content or DEFAULT_STR)
+            if not MorlockCli.isvalid(content):
+                msg = "'{}' is possibly corrupted.".format(file)
                 print(msg)
-                sys.exit(1)
+                continue
 
-            return
+            # If file is encrypted
+            if content['password'] is not None:
+                msg = "Type in password for '{}': ".format(file)
+                password = input(msg)
+                match = bcrypt.checkpw(password.encode('utf-8'), content['password'].encode('utf-8'))
+                if not match:
+                    msg = 'Incorrect password entered.'
+                    print(msg)
+                    continue
+            else:
+                password = None
 
-        # If the given file does not exist
-        if not os.path.isfile(file):
-            msg = "'{}' not found.".format(file)
+            msg = "'{}' loaded successfully. Activate it with `activate {}`".format(file, file)
+            morlockfile = MorlockFile(file, content, password)
+            self.loadedfiles.append(morlockfile)
             print(msg)
+
+    def do_unload(self, file):
+        pass 
+
+    def do_list(self, files):
+        "Print data that's saved on file(s) - given or active"
+
+        # If files were given
+        if files != '':
+            for file in shlex.split(files):
+                morlockfile = self.findmorlockfile(file)
+                if morlockfile is None:
+                    msg = "'{}' is not currently loaded. First, load it with `load {}`".format(file, file)
+                    print(msg)
+                    continue
+                
+                content = json.dumps(morlockfile.content or {}, ensure_ascii=False, indent=4)
+                print(content)
+
             return
-
-        # If the file's extension isn't .mp3
-        ext = os.path.splitext(file)[1].replace('.', '').lower()
-        if not ext in ['mp3']:
-            msg = "Extension '{}' is not supported.".format(ext)
-            print(msg)
-            return
-
-        with open(file, 'rb') as f:
-            byte = f.read()
-            content = []
-
-            # Reading until the start of MP3 content
-            while not byte.startswith(b'ID3'):
-                content.append(byte[0])
-                byte = byte[1:] 
-
-            # Turning array of ints into string with `morlock` content
-            content = "".join(map(chr, content))
-
-        # Getting `morlock` content inside of the file's head
-        if not '<morlock>' in content or not '</morlock>' in content:
-            content = ''
-        else:
-            while not content.startswith('<morlock>'):
-                content = content[1:]
-
-            while not content.endswith('</morlock>'):
-                content = content[:-1]
-
-            # Removing `morlock` tags
-            content = content.replace('<morlock>', '').replace('</morlock>', '')
-
-            # Extracting JSON content
-            while not MorlockCli.isjson(content) and content != '':
-                content = content[1:]
-
-        # If `morlock` content isn't JSON
-        content = json.loads(content or DEFAULT_STR)
-        if not MorlockCli.isvalid(content):
-            msg = 'The given file is possibly corrupted.'
-            print(msg)
-            return
-
-        # If file is encrypted
-        if content['password'] is not None:
-            msg = "Type in content's password: "
-            password = input(msg)
-            match = bcrypt.checkpw(password.encode('utf-8'), content['password'].encode('utf-8'))
-            if not match:
-                msg = 'Incorrect password entered.'
-                print(msg)
-                return
-        else:
-            password = None
-
-        morlockfile = MorlockFile(file, content, password)
-        msg = "'{}' loaded successfully.".format(file)
-        self.prompt = 'morlock ({})> '.format(file)
-        self.loadedfiles.append(morlockfile)
-        self.activefile = morlockfile
-        print(msg)
-
-    def do_list(self, arg):
+        
         if self.activefile is None:
-            msg = 'No file is currently loaded. First, run `load [FILE]`'
+            msg = 'No file is currently active. First, run `activate [FILE]`'
             print(msg)
             return
 
         content = json.dumps(self.activefile.content or {}, ensure_ascii=False, indent=4)
         print(content)
 
-    def do_switch(self, file):
-        pass
-
     def do_set(self, arg):
         print(arg)
 
-    def do_unload(self, arg):
-        pass 
+    def do_activate(self, file):
+        morlockfile = self.findmorlockfile(file)
+        if morlockfile is None:
+            msg = "'{}' is not currently loaded. First, load it with `load {}`".format(file, file)
+            print(msg)
+            return
+
+        if self.activefile is None:
+            self.activefile = morlockfile
+            self.prompt = 'morlock({})> '.format(file)
+            msg = "'{}' activated successfully.".format(file)
+            print(msg)
+        else:
+            file = self.activefile.file
+            msg = "'{}' is currently active. First, deactivate it with `deactivate {}`".format(file, file)
+            pass
 
     def do_save(self, arg):
         pass
@@ -157,9 +177,16 @@ class MorlockCli(cmd.Cmd):
         else:
             pass
 
-    def do_EOF(self, *args):
+    def do_EOF(self, _=None):
         print(sep='')
         return True
+
+    def findmorlockfile(self, file: str) -> MorlockFile:
+        for loadedfile in self.loadedfiles:
+            if loadedfile.file == file:
+                return loadedfile
+
+        return None
 
     @staticmethod
     def isjson(txt: str) -> bool:
