@@ -1,8 +1,7 @@
-import argparse
-from Morlock import Morlock
+import Morlock
 
 def main():
-    Morlock().cmdloop()
+    Morlock.MorlockCli().cmdloop()
 
 if __name__ == '__main__':
     main()

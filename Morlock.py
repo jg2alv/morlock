@@ -16,11 +16,23 @@ DEFAULT_STR = str(DEFAULT)
     }
 """
 
-class Morlock(cmd.Cmd):
+class MorlockFile:
+    file: str = None
+    content: dict = None
+    password: str = None
+
+    def __init__(self, file: str, content: dict, password: str) -> None:
+        self.file = file
+        self.content = content
+        self.password = password
+
+
+class MorlockCli(cmd.Cmd):
     intro = 'Welcome to morlock.\nType help or ? to list commands.\n'
     prompt = 'morlock> '
 
-    file: str = None
+    loadedfiles: list[MorlockFile] = []
+    activefile: MorlockFile = None
     content: dict = None
     password: str = None
 
@@ -28,11 +40,11 @@ class Morlock(cmd.Cmd):
         'Load a given file'
 
         # If there's a already file loaded
-        if self.file is not None:
+        if self.activefile is not None:
             action = None
-            msg = "'{}' is currently loaded. Would you like to (s)ave and close the current file or (d)iscard changes [sd]? ".format(self.file)
+            msg = "'{}' is currently loaded. Would you like to s(w)itch acitve files, (s)ave and close the current file or (d)iscard changes [sd]? ".format(self.activefile)
             
-            while action not in ['s', 'd']:
+            while action not in ['s', 'd', 'w']:
                 action = input(msg)
             
             if action == 's':
@@ -41,6 +53,8 @@ class Morlock(cmd.Cmd):
                 self.do_load(file)
             elif action == 'd':
                 self.do_close(discard=True)
+            elif action == 'w':
+                self.do_switch(file)
             else:
                 msg = 'Something went terribly wrong - exiting...'
                 print(msg)
@@ -87,12 +101,12 @@ class Morlock(cmd.Cmd):
             content = content.replace('<morlock>', '').replace('</morlock>', '')
 
             # Extracting JSON content
-            while not Morlock.is_json(content) and content != '':
+            while not MorlockCli.isjson(content) and content != '':
                 content = content[1:]
 
-        content = json.loads(content or DEFAULT_STR)
         # If `morlock` content isn't JSON
-        if not Morlock.is_valid(content):
+        content = json.loads(content or DEFAULT_STR)
+        if not MorlockCli.isvalid(content):
             msg = 'The given file is possibly corrupted.'
             print(msg)
             return
@@ -100,37 +114,44 @@ class Morlock(cmd.Cmd):
         # If file is encrypted
         if content['password'] is not None:
             msg = "Type in content's password: "
-            self.password = self.password or input(msg)
-            match = bcrypt.checkpw(self.password.encode('utf-8'), content['password'].encode('utf-8'))
+            password = input(msg)
+            match = bcrypt.checkpw(password.encode('utf-8'), content['password'].encode('utf-8'))
             if not match:
                 msg = 'Incorrect password entered.'
                 print(msg)
                 return
+        else:
+            password = None
 
+        morlockfile = MorlockFile(file, content, password)
         msg = "'{}' loaded successfully.".format(file)
-        self.file = file
-        self.content = content
+        self.prompt = 'morlock ({})> '.format(file)
+        self.loadedfiles.append(morlockfile)
+        self.activefile = morlockfile
         print(msg)
 
-    def do_list(self, *args):
-        if self.file is None:
+    def do_list(self, arg):
+        if self.activefile is None:
             msg = 'No file is currently loaded. First, run `load [FILE]`'
             print(msg)
             return
 
-        content = json.dumps(self.content or {}, ensure_ascii=False, indent=4)
+        content = json.dumps(self.activefile.content or {}, ensure_ascii=False, indent=4)
         print(content)
 
-    def do_set(self, *args):
-        print(args)
-
-    def do_unload(self, *args):
-        pass 
-
-    def do_save(self, *args):
+    def do_switch(self, file):
         pass
 
-    def do_close(self, *args, discard=False):
+    def do_set(self, arg):
+        print(arg)
+
+    def do_unload(self, arg):
+        pass 
+
+    def do_save(self, arg):
+        pass
+
+    def do_close(self, arg, discard=False):
         if discard:
             pass
         else:
@@ -141,7 +162,7 @@ class Morlock(cmd.Cmd):
         return True
 
     @staticmethod
-    def is_json(txt: str) -> bool:
+    def isjson(txt: str) -> bool:
         try:
             json.loads(txt)
         except ValueError:
@@ -150,7 +171,7 @@ class Morlock(cmd.Cmd):
         return True
 
     @staticmethod
-    def is_valid(content: dict) -> bool:
+    def isvalid(content: dict) -> bool:
         for key in DEFAULT.keys():
             if not key in content:
                 return False
