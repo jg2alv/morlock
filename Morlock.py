@@ -20,6 +20,7 @@ class MorlockFile:
     file: str = None
     content: dict = None
     password: str = None
+    modified: bool = False
 
     def __init__(self, file: str, content: dict, password: str) -> None:
         self.file = file
@@ -120,8 +121,30 @@ class MorlockCli(cmd.Cmd):
             self.loadedfiles.append(morlockfile)
             print(msg)
 
-    def do_unload(self, file):
-        pass 
+    def do_unload(self, files):
+        for file in shlex.split(files):
+            morlockfile = self.findmorlockfile(file)
+            if morlockfile is None:
+                msg = "'{}' is not currently loaded. First, load it with `load {}`".format(file, file)
+                print(msg)
+                continue
+
+            if morlockfile.modified:
+                msg = "'{}' was modified. Do you wish to close it and discard changes (y/n)? ".format(file)
+                discard = input(msg)
+
+                while discard.lower() not in ['y', 'n']:
+                    discard = input(msg)
+
+                if discard == 'n':
+                    continue
+            
+            if self.activefile == morlockfile:
+                self.do_deactivate()
+
+            msg = "'{}' successfully closed.".format(file)
+            self.loadedfiles.remove(morlockfile)
+            print(msg)
 
     def do_list(self, files):
         "Print data that's saved on file(s) - given or active"
@@ -168,7 +191,7 @@ class MorlockCli(cmd.Cmd):
             msg = "'{}' is currently active. First, deactivate it with `deactivate {}`".format(file, file)
             pass
 
-    def do_deactivate(self, _=None):
+    def do_deactivate(self, _: str=None):
         if self.activefile is None:
             msg = "There's no currently active file."
             print(msg)
@@ -194,12 +217,6 @@ class MorlockCli(cmd.Cmd):
 
     def do_save(self, arg):
         pass
-
-    def do_close(self, arg, discard=False):
-        if discard:
-            pass
-        else:
-            pass
 
     def do_EOF(self, _=None):
         print(sep='')
