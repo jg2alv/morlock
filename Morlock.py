@@ -1,4 +1,4 @@
-import cmd, os, json, bcrypt, shlex
+import cmd, os, json, bcrypt, shlex, re, copy
 
 DEFAULT = {
     "name": "[unnamed]",
@@ -37,14 +37,14 @@ class MorlockCli(cmd.Cmd):
     content: dict = None
     password: str = None
 
-    def do_load(self, paths):
+    def do_load(self, paths: str) -> None:
         'Load given file(s)'
 
         for path in shlex.split(paths):
             print("Loading '{}'...".format(path))
 
             # If to-be-active file is already loaded
-            if self.findmorlockfile(path) is not None:
+            if self.findmorlockfile({'path': path}) is not None:
                 msg = "'{}' is already loaded. Maybe try `switch`?".format(path)
                 print(msg)
                 continue
@@ -121,9 +121,9 @@ class MorlockCli(cmd.Cmd):
             self.loadedfiles.append(morlockfile)
             print(msg)
 
-    def do_unload(self, paths):
+    def do_unload(self, paths: str) -> None:
         for path in shlex.split(paths):
-            morlockfile = self.findmorlockfile(path)
+            morlockfile = self.findmorlockfile({'path': path})
             if morlockfile is None:
                 msg = "'{}' is not currently loaded. First, load it with `load {}`".format(path, path)
                 print(msg)
@@ -146,13 +146,13 @@ class MorlockCli(cmd.Cmd):
             self.loadedfiles.remove(morlockfile)
             print(msg)
 
-    def do_list(self, paths):
+    def do_list(self, paths: str) -> None:
         "Print data that's saved on file(s) - given or active"
 
         # If files were given
         if paths != '':
             for path in shlex.split(paths):
-                morlockfile = self.findmorlockfile(path)
+                morlockfile = self.findmorlockfile({'path': path})
                 if morlockfile is None:
                     msg = "'{}' is not currently loaded. First, load it with `load {}`".format(path, path)
                     print(msg)
@@ -171,11 +171,127 @@ class MorlockCli(cmd.Cmd):
         content = json.dumps(self.activefile.content or {}, ensure_ascii=False, indent=4)
         print(content)
 
-    def do_set(self, arg):
-        print(arg)
+    def do_set(self, args: str) -> None:
+        """Set content of active file.
+        Syntax: `set key val`
+        The command takes exactly two arguments.
+        `key` must include only {a-z,.,0-9,A-Z,],[} characters.
+        In order to access a sublevel, enter level1.level2 like syntax: `set first_level.second_level.third_level value`
+        """
 
-    def do_activate(self, path):
-        morlockfile = self.findmorlockfile(path)
+        args = shlex.split(args)
+
+        # Exactly two arguments are accepted.
+        if len(args) != 2:
+            msg = 'Invalid syntax. See `help set`.'
+            print(msg)
+            return
+
+        # The only file that can be modified is the active one
+        if self.activefile is None:
+            msg = "No file is active. First, run `activate [FILE]`"
+            print(msg)
+            return
+
+        key, val = args[0], args[1]
+        keys = key.split('.')
+
+        # Checking for forbidden characters
+        if len(re.findall(r"[^A-z\d.\[\]]", key)) > 0:
+            msg = 'Forbidden characters found in given key. See `help set`'
+            print(msg)
+            return
+
+        if MorlockCli.isjson(val):
+            val = json.loads(val)
+
+        isinvalid = lambda key: ('[' in key and not ']' in key) or ('[]' in key) or (']' in key and not '[' in key)
+        islist = lambda key: '[' in key
+        base = refr = copy.deepcopy(self.activefile.content['data'])
+        last = keys[-1]
+
+        for key in keys:
+            # Key is of type key[a]...[z] (aka list)
+            if islist(key):
+                name, idxs = key.split('[', 1)
+                idxs = idxs[:-1].split('][')
+                exists = (name in refr)
+
+                # Checking for keys with: only opening/ closing bracket; [] without index
+                if isinvalid(key):
+                    msg = 'Invalid key found. Aborting.'
+                    print(msg)
+                    return
+
+                # Checking for keys without identifier (e.g.: [0][1][2])
+                if name == '':
+                    msg = "'{}' is an invalid key.".format(key)
+                    print(msg)
+                    return
+
+                # refr[name] does not exist or isn't a list
+                if not exists or not isinstance(refr[name], list):
+                    refr[name] = []
+                
+                # Setting a reference 
+                lst = refr[name]
+                for i in range(len(idxs)):
+                    idx = idxs[i]
+
+                    # If list index is not a digit (e.g lst['a']; correct -> lst.a)
+                    if not idx.isdigit():
+                        msg = 'Forbidden non-digit index found. Aborting.'
+                        print(msg)
+                        return
+
+                    islastidx = (i == len(idxs) - 1)
+                    idx = int(idx)
+
+                    # Handling indices out of bound of list
+                    if not idx in range(-len(lst), len(lst) + 1):
+                        msg = 'Given index is out of bounds. Aborting.'
+                        print(msg)
+                        return
+
+                    # refr[name][idx-0][idx-1]...[idx-n] isn't a list
+                    # Needs to recheck since it's in a loop
+                    if not isinstance(lst, list):
+                        lst = []
+
+                    # If it's pushing time
+                    if islastidx:
+                        # Adding a new value
+                        if idx == len(lst):
+                            lst.append(val)
+                        # Editing existing value
+                        else:
+                           lst[idx] = val
+
+                    # Going deeper into the list
+                    lst = lst[idx]
+                
+            # Key is of type key.a...z (aka dict)
+            else:
+                islastkey = (key == last)
+                exists = (key in refr)
+
+                # If that's the last iteration, set the value
+                if islastkey:
+                    refr[key] = val
+                else:
+                    # The user wants to set a deep-level dict
+                    if not exists:
+                        refr[key] = {}
+                    elif not isinstance(refr[key], dict):
+                        refr[key] = {}
+
+                # Going deeper into the dict
+                refr = refr[key]
+            
+        self.activefile.content['data'] = base
+
+    def do_activate(self, path: str) -> None:
+        morlockfile = self.findmorlockfile({'path': path})
         if morlockfile is None:
             msg = "'{}' is not currently loaded. First, load it with `load {}`".format(path, path)
             print(msg)
@@ -191,7 +307,7 @@ class MorlockCli(cmd.Cmd):
             msg = "'{}' is currently active. First, deactivate it with `deactivate {}`".format(path, path)
             pass
 
-    def do_deactivate(self, _: str=None):
+    def do_deactivate(self, _: str=None) -> None:
         if self.activefile is None:
             msg = "There's no currently active file."
             print(msg)
@@ -203,7 +319,7 @@ class MorlockCli(cmd.Cmd):
     def do_switch(self, path: str) -> None:
         '`switch [FILE]` is a shortcut for `deactivate; activate [FILE]`'
 
-        morlockfile = self.findmorlockfile(path)
+        morlockfile = self.findmorlockfile({'path': path})
 
         # If to-be-active file is not loaded
         if morlockfile is None:
@@ -222,12 +338,23 @@ class MorlockCli(cmd.Cmd):
         print(sep='')
         return True
 
-    def findmorlockfile(self, path: str) -> MorlockFile:
-        for loadedfile in self.loadedfiles:
-            if loadedfile.path == path:
-                return loadedfile
+    def findmorlockfiles(self, prop: dict) -> list[MorlockFile]:
+        morlockfiles = []
 
-        return None
+        for loadedfile in self.loadedfiles:
+            for key, val in prop.items():
+                if hasattr(loadedfile, key) and getattr(loadedfile, key) == val:
+                    morlockfiles.append(loadedfile)
+
+        return morlockfiles
+
+    def findmorlockfile(self, prop: dict) -> MorlockFile:
+        morlockfiles = self.findmorlockfiles(prop)
+
+        if len(morlockfiles) > 0:
+            return morlockfiles[0]
+        else:
+            return None
 
     @staticmethod
     def isjson(txt: str) -> bool:
