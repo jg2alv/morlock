@@ -5,15 +5,6 @@ DEFAULT_STR = str(DEFAULT)
 OPEN_TAG = '<morlock>'
 CLOSE_TAG = '</morlock>'
 
-"""
-    {
-        "name": "anakarine",
-        "data": {
-
-        }
-    }
-"""
-
 class MorlockFile:
     path: str = None
     data: str = None
