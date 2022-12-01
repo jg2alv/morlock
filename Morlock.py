@@ -63,33 +63,38 @@ class MorlockCli(cmd.Cmd):
 
             with open(path, 'rb') as f:
                 byte = f.read()
-                content = []
+                
+            open_tag = OPEN_TAG.encode('utf-8')
+            close_tag = CLOSE_TAG.encode('utf-8')
+            content = []
 
+            if not open_tag in byte or not close_tag in byte:
+                content = ''
+            else:
                 # Reading until the start of MP3 content
                 while not byte.startswith(b'ID3'):
                     content.append(byte[0])
                     byte = byte[1:]
 
-                # Turning array of ints into string with the file's data & content
+                # Turning array of ints into string with the file's content
                 content = ''.join(map(chr, content))
-                data = byte
+                
+            # Saving the rest of the file
+            data = byte
 
             # Getting `morlock` content inside of the file's head
-            if not OPEN_TAG in content or not CLOSE_TAG in content:
-                content = ''
-            else:
-                while not content.startswith(OPEN_TAG):
-                    content = content[1:]
+            while not content.startswith(OPEN_TAG):
+                content = content[1:]
 
-                while not content.endswith(CLOSE_TAG):
-                    content = content[:-1]
+            while not content.endswith(CLOSE_TAG):
+                content = content[:-1]
 
-                # Removing `morlock` tags
-                content = content.replace(OPEN_TAG, '').replace(CLOSE_TAG, '')
+            # Removing `morlock` tags
+            content = content.replace(OPEN_TAG, '').replace(CLOSE_TAG, '')
 
-                # Extracting JSON content
-                while not MorlockCli.isjson(content) and content != '':
-                    content = content[1:]
+            # Extracting JSON content
+            while not MorlockCli.isjson(content) and content != '':
+                content = content[1:]
 
             # If `morlock` content isn't JSON
             if not MorlockCli.isvalid(content):
