@@ -554,8 +554,8 @@ class MorlockCli(cmd.Cmd):
     def do_wipe(self, paths: str) -> None:
         'Remove all traces of Morlock from file'
         self.do_clear(paths, all=True)
-
-    def do_EOF(self, _):
+ 
+    def do_EOF(self, _) -> bool:
         'Clean up and exit'
 
         modifiedfiles = self.findmorlockfiles({ 'modified': True })
@@ -563,14 +563,15 @@ class MorlockCli(cmd.Cmd):
             msg = "\nThere are modified files. Do you want to quit and discard all changes (y/n)? "
             action = input(msg)
 
-            while action.lower() not in ['y', 'n']:
-                action = input(msg)
-
-            if action == 'n':
-                return
+            if action.lower() == 'n':
+                return False
 
         print(sep='')
         return True
+
+    def do_quit(self, _) -> bool:
+        'Alias to EOF'
+        return self.do_EOF(_)
 
     def findmorlockfiles(self, prop: dict) -> list[MorlockFile]:
         morlockfiles = []

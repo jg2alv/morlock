@@ -24,3 +24,4 @@ The tool is a command line interface. Therefore, one must enter commands to be e
 * `clear`: clears all written data from given file(s).
 * `wipe`: clears all traces of Morlock cli from given file(s).
 * `EOF`: quits the program. Will prompt the user if there are unsaved changes.
+* `quit`: alias to `EOF`.
