@@ -3,7 +3,6 @@ import cmd, os, json, bcrypt, shlex, re, copy
 OPEN_TAG = '<morlock>'
 CLOSE_TAG = '</morlock>'
 DEFAULT = { "name": None, "password": None, "data": {} }
-DEFAULT_STR = OPEN_TAG + json.dumps(DEFAULT) + CLOSE_TAG
 
 class MorlockFile:
     path: str = None
@@ -64,7 +63,17 @@ class MorlockCli(cmd.Cmd):
 
             # If there's no content in the file
             if not open_tag in byte or not close_tag in byte:
-                content = DEFAULT_STR
+                msg = "Empty file detected. Loading defaults..."
+                print(msg)
+                default = copy.deepcopy(DEFAULT)
+                msg = "Enter name: "
+                name = input(msg)
+                default['name'] = name
+                msg = "Should the file be password-protected (y/n)? "
+                isprotected = input(msg)
+                
+                isprotected = (isprotected.lower() == 'y')
+                content = OPEN_TAG + json.dumps(default) + CLOSE_TAG
             else:
                 # Reading until the start of MP3 content
                 while not byte.startswith(b'ID3'):
@@ -73,6 +82,7 @@ class MorlockCli(cmd.Cmd):
 
                 # Turning array of ints into string with the file's content
                 content = ''.join(map(chr, content))
+                isprotected = False
                 
             # Saving the rest of the file
             data = byte
@@ -114,6 +124,9 @@ class MorlockCli(cmd.Cmd):
             morlockfile = MorlockFile(path, data, content)
             self.loadedfiles.append(morlockfile)
             print(msg)
+
+            if isprotected:
+                self.do_lock(morlockfile.path)
 
     def do_unload(self, paths: str) -> None:
         'Unload given MorlockFile(s)'
@@ -193,7 +206,7 @@ class MorlockCli(cmd.Cmd):
             for path in shlex.split(paths):
                 llist(path)
         elif self.activefile is not None:
-            llist(self.activefile, self.activefile.path)
+            llist(self.activefile.path)
         else:
             msg = "There's no active file and zero files were given to perform `list` on."
             print(msg)
