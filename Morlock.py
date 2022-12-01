@@ -156,6 +156,22 @@ class MorlockCli(cmd.Cmd):
             msg = "There's no active file and zero files were given to be unloaded."
             print(msg)
 
+    def do_reload(self, paths: str) -> None:
+        'Shortcut to `unload [FILE]; load [FILE]'
+
+        def reload(path: str) -> None:
+            self.do_unload(path)
+            self.do_load(path)
+
+        if paths != '':
+            for path in shlex.split(paths):
+                reload(path)
+        elif self.activefile is not None:
+            reload(self.activefile.path)
+        else:
+            msg = 'There were no given files to be reloaded.'
+            print(msg)
+
     def do_list(self, paths: str) -> None:
         "Print data that's saved on file(s) - given or active"
 
@@ -354,51 +370,44 @@ class MorlockCli(cmd.Cmd):
             
             self.do_activate(path)
 
-    def do_reload(self, path: str) -> None:
-        'Shortcut to `unload [FILE]; load [FILE]'
-
-        self.do_unload(path)
-        self.do_load(path)
-
-    def do_save(self, loadedfiles: str) -> None:
+    def do_save(self, paths: str) -> None:
         'Save given MorlockFile(s) (e.g.: `save`, `save file1 file2 file3`)'
 
-        def save(file: MorlockFile) -> None:
-            with open(file.path, 'wb') as f:
+        def save(path: str) -> None:
+            # Finding given file
+            morlockfile = self.findmorlockfile({ 'path': path })
+            if morlockfile is None:
+                msg = "File '{}' not found.".format(path)
+                print(msg)
+                return
+            elif not morlockfile.modified:
+                msg = "File '{}' was not modified; skipping.".format(path)
+                print(msg)
+                return
+
+            with open(morlockfile.path, 'wb') as f:
                 # Joining content to prepend file
-                oldcontent = file.data
-                newcontent = file.gen_bytes()
+                oldcontent = morlockfile.data
+                newcontent = morlockfile.gen_bytes()
                 f.write(newcontent + oldcontent)
 
-                msg = "'{}' saved successfully. Reloading file...".format(file.path)
-                wasactive = (self.activefile == file)
-                file.modified = False
+                msg = "'{}' saved successfully. Reloading file...".format(morlockfile.path)
+                wasactive = (self.activefile == morlockfile)
+                morlockfile.modified = False
                 print(msg)
 
                 # Reloading the file
-                self.do_reload(file.path)
+                self.do_reload(morlockfile.path)
 
                 # Re-activating if necessary
                 if wasactive:
-                    self.do_activate(file.path)
+                    self.do_activate(morlockfile.path)
 
-        if loadedfiles != '':
-            for path in shlex.split(loadedfiles):
-                # Finding given file
-                morlockfile = self.findmorlockfile({ 'path': path })
-                if morlockfile is None:
-                    msg = "File '{}' not found.".format(path)
-                    print(msg)
-                    return
-                elif not morlockfile.modified:
-                    msg = "File '{}' was not modified; skipping.".format(path)
-                    print(msg)
-                    return
-
-                save(morlockfile)
+        if paths != '':
+            for path in shlex.split(paths):
+                save(path)
         elif self.activefile is not None:
-            # Saving currently active file
-            save(self.activefile)
+            save(self.activefile.path)
         else:
             msg = "There's no active file and zero files were given to be saved."
             print(msg)
