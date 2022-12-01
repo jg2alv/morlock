@@ -7,6 +7,7 @@ DEFAULT = { "name": None, "password": None, "data": {} }
 class MorlockFile:
     path: str = None
     data: str = None
+    wiped: bool = False
     content: dict = None
     modified: bool = False
 
@@ -16,8 +17,11 @@ class MorlockFile:
         self.content = content
 
     def gen_bytes(self) -> bytes:
-        content = json.dumps(self.content)
-        data = OPEN_TAG + content + CLOSE_TAG
+        if self.content == {}:
+            data = ''
+        else:
+            content = json.dumps(self.content)
+            data = OPEN_TAG + content + CLOSE_TAG
 
         return data.encode('utf-8')
 
@@ -393,7 +397,7 @@ class MorlockCli(cmd.Cmd):
                 msg = "File '{}' not found.".format(path)
                 print(msg)
                 return
-            elif not morlockfile.modified:
+            elif not morlockfile.modified and not morlockfile.wiped:
                 msg = "File '{}' was not modified; skipping.".format(path)
                 print(msg)
                 return
@@ -404,13 +408,18 @@ class MorlockCli(cmd.Cmd):
                 newcontent = morlockfile.gen_bytes()
                 f.write(newcontent + oldcontent)
 
-                msg = "'{}' saved successfully. Reloading file...".format(morlockfile.path)
-                wasactive = (self.activefile == morlockfile)
-                morlockfile.modified = False
-                print(msg)
-
-                # Reloading the file
-                self.do_reload(morlockfile.path)
+                if morlockfile.wiped:
+                    morlockfile.wiped = False
+                    wasactive = False
+                    msg = "'{}' saved successfully. Unloading file...".format(morlockfile.path)
+                    print(msg)
+                    self.do_unload(morlockfile.path)
+                else:
+                    morlockfile.modified = False
+                    wasactive = (self.activefile == morlockfile)
+                    msg = "'{}' saved successfully. Reloading file...".format(morlockfile.path)
+                    print(msg)
+                    self.do_reload(morlockfile.path)
 
                 # Re-activating if necessary
                 if wasactive:
@@ -504,6 +513,47 @@ class MorlockCli(cmd.Cmd):
             msg = "There's no active file and zero files were given to be locked."
             print(msg)
             return
+
+    def do_clear(self, paths: str, all: bool=False) -> None:
+        "Clear morlock file's data"
+
+        def clear(path: str) -> None:
+            # Find given file
+            morlockfile = self.findmorlockfile({'path': path})
+
+            if morlockfile is None:
+                msg = "'{}' is not loaded; skipping...".format(path)
+                print(msg)
+                return
+
+            # Should wipe everything?
+            if all:
+                morlockfile.content = {}
+                morlockfile.wiped = True
+                msg = "'{}' wiped successfully.".format(path)
+            else:
+                # If file wasn't already wiped
+                if 'data' in morlockfile.content:
+                    morlockfile.modified = True
+                    morlockfile.content['data'] = {}
+                    msg = "'{}' cleared successfully.".format(path)
+                else:
+                    msg = "'{}' was already wiped before.".format(path)
+
+            print(msg)
+
+        if paths != '':
+            for path in shlex.split(paths):
+                clear(path)
+        elif self.activefile is not None:
+            clear(self.activefile.path)
+        else:
+            msg = ''
+            print(msg)
+
+    def do_wipe(self, paths: str) -> None:
+        'Remove all traces of Morlock from file'
+        self.do_clear(paths, all=True)
 
     def do_EOF(self, _):
         'Clean up and exit'

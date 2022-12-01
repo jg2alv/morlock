@@ -21,4 +21,6 @@ The tool is a command line interface. Therefore, one must enter commands to be e
 * `save`: writes changes into hardidsk-file. No change will take effect if one quits the CLI without running a save command.
 * `unlock`: removes the password from a password-protected file. The user must provide the currently-used password of the file in order to remove it.
 * `lock`: sets a new password for a file. The user must provide the currently-used password of the file (if any) in order to change it.
+* `clear`: clears all written data from given file(s).
+* `wipe`: clears all traces of Morlock cli from given file(s).
 * `EOF`: quits the program. Will prompt the user if there are unsaved changes.
