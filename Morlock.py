@@ -72,7 +72,7 @@ class MorlockCli(cmd.Cmd):
 
                 # Turning array of ints into string with the file's data & content
                 content = ''.join(map(chr, content))
-                data = ''.join(map(chr, [ b for b in byte ]))
+                data = byte
 
             # Getting `morlock` content inside of the file's head
             if not OPEN_TAG in content or not CLOSE_TAG in content:
@@ -336,11 +336,11 @@ class MorlockCli(cmd.Cmd):
 
         def write(file: MorlockFile) -> None:
             with open(file.path, 'wb') as f:
-                oldcontent = file.data.encode('utf-8')
+                oldcontent = file.data
                 newcontent = file.gen_bytes()
                 f.write(newcontent + oldcontent)
 
-                msg = "'{}' saved successfully.".format(file.path)
+                msg = "'{}' saved successfully. Reloading file...".format(file.path)
                 wasactive = (self.activefile == file)
                 file.modified = False
                 print(msg)
