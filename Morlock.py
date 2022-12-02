@@ -3,6 +3,7 @@ import cmd, os, json, bcrypt, shlex, re, copy
 OPEN_TAG = '<morlock>'
 CLOSE_TAG = '</morlock>'
 DEFAULT = { "name": None, "password": None, "data": {} }
+EXTENSIONS = { 'mp3': [ b'ID3', b'\xc3\xbf\xc3\xbb', b'\xc3\xbf\xc3\xb3', b'\xc3\xbf\xc3\xb2' ], 'ogg': [ b'OggS' ], 'flac': [ b'fLaC' ], 'wav': [ b'RIFF\x06\xc1O\x00WAVE' ] }
 
 class MorlockFile:
     path: str = None
@@ -20,7 +21,7 @@ class MorlockFile:
         if self.content == {}:
             data = ''
         else:
-            content = json.dumps(self.content)
+            content = json.dumps(self.content, indent=None, separators=(',', ':'))
             data = OPEN_TAG + content + CLOSE_TAG
 
         return data.encode('utf-8')
@@ -51,9 +52,9 @@ class MorlockCli(cmd.Cmd):
                 print(msg)
                 continue
 
-            # If the file's extension isn't .mp3
+            # If the file's extension isn't supported
             ext = os.path.splitext(path)[1].replace('.', '').lower()
-            if not ext in ['mp3']:
+            if not ext in EXTENSIONS:
                 msg = "Extension '{}' is not supported.".format(ext)
                 print(msg)
                 continue
@@ -61,11 +62,13 @@ class MorlockCli(cmd.Cmd):
             with open(path, 'rb') as f:
                 byte = f.read()
                 
-            open_tag = OPEN_TAG.encode('utf-8')
             close_tag = CLOSE_TAG.encode('utf-8')
+            open_tag = OPEN_TAG.encode('utf-8')
+            sigs = EXTENSIONS.get(ext)
+            wasmodified = False
             content = []
 
-            # If there's no content in the file
+            # If there's no Morlock content in the file
             if not open_tag in byte or not close_tag in byte:
                 msg = "Empty file detected. Loading defaults..."
                 print(msg)
@@ -75,12 +78,18 @@ class MorlockCli(cmd.Cmd):
                 default['name'] = name
                 msg = "Should the file be password-protected (y/n)? "
                 isprotected = input(msg)
-                
                 isprotected = (isprotected.lower() == 'y')
+                wasmodified = True
                 content = OPEN_TAG + json.dumps(default) + CLOSE_TAG
             else:
-                # Reading until the start of MP3 content
-                while not byte.startswith(b'ID3'):
+                sig = next(filter(lambda s: s in byte, sigs), None)
+                if sig is None:
+                    msg = "'{}' is possibly corrupted.".format(path)
+                    print(msg)
+                    continue
+
+                # Reading until the start of audio content
+                while not byte.startswith(sig):
                     content.append(byte[0])
                     byte = byte[1:]
 
@@ -127,6 +136,7 @@ class MorlockCli(cmd.Cmd):
             msg = "'{}' loaded successfully.".format(path)
             morlockfile = MorlockFile(path, data, content)
             self.loadedfiles.append(morlockfile)
+            morlockfile.modified = wasmodified
             print(msg)
 
             if isprotected:
@@ -413,28 +423,29 @@ class MorlockCli(cmd.Cmd):
                 print(msg)
                 return
 
+            # Generating content to prepend to file
+            oldcontent = morlockfile.data
+            newcontent = morlockfile.gen_bytes()
+            
             with open(morlockfile.path, 'wb') as f:
-                # Joining content to prepend file
-                oldcontent = morlockfile.data
-                newcontent = morlockfile.gen_bytes()
                 f.write(newcontent + oldcontent)
 
-                if morlockfile.wiped:
-                    morlockfile.wiped = False
-                    wasactive = False
-                    msg = "'{}' saved successfully. Unloading file...".format(morlockfile.path)
-                    print(msg)
-                    self.do_unload(morlockfile.path)
-                else:
-                    morlockfile.modified = False
-                    wasactive = (self.activefile == morlockfile)
-                    msg = "'{}' saved successfully. Reloading file...".format(morlockfile.path)
-                    print(msg)
-                    self.do_reload(morlockfile.path)
+            if morlockfile.wiped:
+                morlockfile.wiped = False
+                wasactive = False
+                msg = "'{}' saved successfully. Unloading file...".format(morlockfile.path)
+                print(msg)
+                self.do_unload(morlockfile.path)
+            else:
+                morlockfile.modified = False
+                wasactive = (self.activefile == morlockfile)
+                msg = "'{}' saved successfully. Reloading file...".format(morlockfile.path)
+                print(msg)
+                self.do_reload(morlockfile.path)
 
-                # Re-activating if necessary
-                if wasactive:
-                    self.do_activate(morlockfile.path)
+            # Re-activating if necessary
+            if wasactive:
+                self.do_activate(morlockfile.path)
 
         if paths != '':
             for path in shlex.split(paths):
@@ -569,8 +580,8 @@ class MorlockCli(cmd.Cmd):
     def do_EOF(self, _) -> bool:
         'Clean up and exit'
 
-        modifiedfiles = self.findmorlockfiles({ 'modified': True })
-        if len(modifiedfiles) > 0:
+        morlockfile = self.findmorlockfile({ 'modified': True })
+        if morlockfile is not None:
             msg = "\nThere are modified files. Do you want to quit and discard all changes (y/n)? "
             action = input(msg)
 
@@ -584,23 +595,13 @@ class MorlockCli(cmd.Cmd):
         'Alias to EOF'
         return self.do_EOF(_)
 
-    def findmorlockfiles(self, prop: dict) -> list[MorlockFile]:
-        morlockfiles = []
-
+    def findmorlockfile(self, prop: dict) -> MorlockFile:
         for loadedfile in self.loadedfiles:
             for key, val in prop.items():
                 if hasattr(loadedfile, key) and getattr(loadedfile, key) == val:
-                    morlockfiles.append(loadedfile)
+                    return loadedfile
 
-        return morlockfiles
-
-    def findmorlockfile(self, prop: dict) -> MorlockFile:
-        morlockfiles = self.findmorlockfiles(prop)
-
-        if len(morlockfiles) > 0:
-            return morlockfiles[0]
-        else:
-            return None
+        return None
 
     @staticmethod
     def isjson(txt: str) -> bool:
