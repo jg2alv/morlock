@@ -1,4 +1,7 @@
 .env
 .vscode
 *.mp3
+*.flac
+*.ogg
+*.wav
 __pycache__
