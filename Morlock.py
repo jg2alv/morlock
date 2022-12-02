@@ -217,28 +217,29 @@ class MorlockCli(cmd.Cmd):
 
     def do_set(self, args: str) -> None:
         """Set content of active file.
-        Syntax: `set key val`
-        The command takes exactly two arguments.
+        Syntax: `set key val [FILE-1 FILE-2 ... FILE-N]`
+        The command takes two or more arguments.
         `key` must include only {a-z,.,0-9,A-Z,],[} characters.
         In order to access a sublevel, enter level1.level2 like syntax: `set first_level.second_level.third_level value`
         """
 
         args = shlex.split(args)
 
-        # Exactly two arguments are accepted.
-        if len(args) != 2:
-            msg = 'Invalid syntax. See `help set`.'
+        # If `key`, `val` and files are given
+        # E.g `set social.instagram apple file.mp3`
+        if len(args) >= 3:
+            key, val, paths = args[0], args[1], args[2:]
+        elif len(args) == 2:
+            if self.activefile is None:
+                msg = "No file is active. First, run `activate [FILE]`"
+                print(msg)
+                return
+
+            key, val, paths = args[0], args[1], [self.activefile.path]
+        else:
+            msg = 'A key, a value and a file (if none is active) must be provided.'
             print(msg)
             return
-
-        # The only file that can be modified is the active one
-        if self.activefile is None:
-            msg = "No file is active. First, run `activate [FILE]`"
-            print(msg)
-            return
-
-        key, val = args[0], args[1]
-        keys = key.split('.')
 
         # Checking for forbidden characters
         if len(re.findall(r"[^A-z\d.\[\]]", key)) > 0:
@@ -249,97 +250,107 @@ class MorlockCli(cmd.Cmd):
         if MorlockCli.isjson(val):
             val = json.loads(val)
 
+        keys = key.split('.')
         isinvalid = lambda key: ('[' in key and not ']' in key) or ('[]' in key) or (']' in key and not '[' in key)
         islist = lambda key: '[' in key
-        base = refr = copy.deepcopy(self.activefile.content['data'])
-        last = keys[-1]
 
-        for key in keys:
-            # Key is of type key[a]...[z] (aka list)
-            if islist(key):
-                name, idxs = key.split('[', 1)
-                idxs = idxs[:-1].split('][')
-                exists = (name in refr)
+        for path in paths:
+            morlockfile = self.findmorlockfile({'path': path})
 
-                # Checking for keys with: only opening/ closing bracket; [] without index
-                if isinvalid(key):
-                    msg = 'Invalid key found. Aborting.'
-                    print(msg)
-                    return
+            if morlockfile is None:
+                msg = "'{}' is not loaded; skipping...".format(path)
+                print(msg)
+                return
 
-                # Checking for keys without identifier (e.g.: [0][1][2])
-                if name == '':
-                    msg = "'{}' is an invalid key.".format(key)
-                    print(msg)
-                    return
+            base = refr = copy.deepcopy(morlockfile.content['data'])
+            last = keys[-1]
 
-                # refr[name] does not exist or isn't a list
-                if not exists or not isinstance(refr[name], list):
-                    self.activefile.modified = True
-                    refr[name] = []
-                
-                # Setting a reference 
-                lst = refr[name]
-                for i in range(len(idxs)):
-                    idx = idxs[i]
+            for key in keys:
+                # Key is of type key[a]...[z] (aka list)
+                if islist(key):
+                    name, idxs = key.split('[', 1)
+                    idxs = idxs[:-1].split('][')
+                    exists = (name in refr)
 
-                    # If list index is not a digit (e.g lst['a']; correct -> lst.a)
-                    if not idx.isdigit():
-                        msg = 'Forbidden non-digit index found. Aborting.'
+                    # Checking for keys with: only opening/ closing bracket; [] without index
+                    if isinvalid(key):
+                        msg = 'Invalid key found. Aborting.'
                         print(msg)
                         return
 
-                    islastidx = (i == len(idxs) - 1)
-                    idx = int(idx)
-
-                    # Handling indices out of bound of list
-                    if not idx in range(-len(lst), len(lst) + 1):
-                        msg = 'Given index is out of bounds. Aborting.'
+                    # Checking for keys without identifier (e.g.: [0][1][2])
+                    if name == '':
+                        msg = "'{}' is an invalid key.".format(key)
                         print(msg)
                         return
 
-                    # refr[name][idx-0][idx-1]...[idx-n] isn't a list
-                    # Needs to recheck since it's in a loop
-                    if not isinstance(lst, list):
-                        lst = []
+                    # refr[name] does not exist or isn't a list
+                    if not exists or not isinstance(refr[name], list):
+                        morlockfile.modified = True
+                        refr[name] = []
 
-                    # If it's pushing time
-                    if islastidx:
-                        # Adding a new value
-                        if idx == len(lst):
-                            self.activefile.modified = True
-                            lst.append(val)
-                        # Editing existing value
-                        elif MorlockCli.listgetdefault(lst, idx) != val:
-                            self.activefile.modified = True
-                            lst[idx] = val
+                    # Setting a reference 
+                    lst = refr[name]
+                    for i in range(len(idxs)):
+                        idx = idxs[i]
 
-                    # Going deeper into the list
-                    lst = lst[idx]
-                
-            # Key is of type key.a...z (aka dict)
-            else:
-                islastkey = (key == last)
-                exists = (key in refr)
+                        # If list index is not a digit (e.g lst['a']; correct -> lst.a)
+                        if not idx.isdigit():
+                            msg = 'Forbidden non-digit index found. Aborting.'
+                            print(msg)
+                            return
 
-                # If that's the last iteration, set the value
-                if islastkey:
-                    if refr.get(key, MorlockEmpty) != val:
-                        self.activefile.modified = True
-                        refr[key] = val
+                        islastidx = (i == len(idxs) - 1)
+                        idx = int(idx)
+
+                        # Handling indices out of bound of list
+                        if not idx in range(-len(lst), len(lst) + 1):
+                            msg = 'Given index is out of bounds. Aborting.'
+                            print(msg)
+                            return
+
+                        # refr[name][idx-0][idx-1]...[idx-n] isn't a list
+                        # Needs to recheck since it's in a loop
+                        if not isinstance(lst, list):
+                            lst = []
+
+                        # If it's pushing time
+                        if islastidx:
+                            # Adding a new value
+                            if idx == len(lst):
+                                morlockfile.modified = True
+                                lst.append(val)
+                            # Editing existing value
+                            elif MorlockCli.listgetdefault(lst, idx) != val:
+                                morlockfile.modified = True
+                                lst[idx] = val
+
+                        # Going deeper into the list
+                        lst = lst[idx]
+
+                # Key is of type key.a...z (aka dict)
                 else:
-                    # The user wants to set a deep-level dict
-                    if not exists:
-                        self.activefile.modified = True
-                        refr[key] = {}
-                    elif not isinstance(refr[key], dict):
-                        self.activefile.modified = True
-                        refr[key] = {}
+                    islastkey = (key == last)
+                    exists = (key in refr)
 
-                # Going deeper into the dict
-                refr = refr[key]
-            
-        self.activefile.content['data'] = base
+                    # If that's the last iteration, set the value
+                    if islastkey:
+                        if refr.get(key, MorlockEmpty) != val:
+                            morlockfile.modified = True
+                            refr[key] = val
+                    else:
+                        # The user wants to set a deep-level dict
+                        if not exists:
+                            morlockfile.modified = True
+                            refr[key] = {}
+                        elif not isinstance(refr[key], dict):
+                            morlockfile.modified = True
+                            refr[key] = {}
+
+                    # Going deeper into the dict
+                    refr = refr[key]
+
+            morlockfile.content['data'] = base
 
     def do_activate(self, path: str) -> None:
         'Activate given MorlockFile'
