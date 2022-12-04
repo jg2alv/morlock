@@ -2,8 +2,22 @@ import cmd, os, json, bcrypt, shlex, re, copy
 
 OPEN_TAG = '<morlock>'
 CLOSE_TAG = '</morlock>'
-DEFAULT = { "name": None, "password": None, "data": {} }
-EXTENSIONS = { 'mp3': [ b'ID3', b'\xc3\xbf\xc3\xbb', b'\xc3\xbf\xc3\xb3', b'\xc3\xbf\xc3\xb2' ], 'ogg': [ b'OggS' ], 'flac': [ b'fLaC' ], 'wav': [ b'RIFF\x06\xc1O\x00WAVE' ] }
+DEFAULT = { 
+    "name": None, 
+    "password": None, 
+    "data": {} 
+}
+EXTENSIONS = { 
+    'mp3': [ 
+        b'ID3',
+        b'\xc3\xbf\xc3\xbb',
+        b'\xc3\xbf\xc3\xb3',
+        b'\xc3\xbf\xc3\xb2'
+    ], 
+    'ogg': [ b'OggS' ],
+    #'flac': [ b'fLaC' ],
+    #'wav': [ b'RIFF\x06\xc1O\x00WAVE' ]
+}
 
 class MorlockFile:
     path: str = None
