@@ -1,6 +1,6 @@
 # morlock
 
-Morlock is a Python CLI to write JSON data into audio files inspired by the show Mr Robot.
+Morlock is a Python CLI to write JSON data into binary files inspired by the show Mr Robot.
 
 ### Usage
 
@@ -25,3 +25,9 @@ The tool is a command line interface. Therefore, one must enter commands to be e
 * `wipe`: clears all traces of Morlock cli from given file(s).
 * `EOF`: quits the program. Will prompt the user if there are unsaved changes.
 * `quit`: alias to `EOF`.
+
+
+### Supported extensions
+
+* `mp3`
+* `ogg`
